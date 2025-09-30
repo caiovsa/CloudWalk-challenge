@@ -1,4 +1,3 @@
-
 from langchain.tools import tool
 # DEPRECATION FIX: Import the new Tavily Search
 from langchain_tavily import TavilySearch
@@ -25,14 +24,16 @@ def create_rag_chain():
         collection_name="infinite_pay_docs"
     )
     retriever = vectorstore.as_retriever()
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+    llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
 
     system_prompt = (
-        "You are an assistant for question-answering tasks. "
-        "Use the following pieces of retrieved context to answer the question. "
-        "If you don't know the answer, just say that you don't know. "
-        "Use three sentences maximum and keep the answer concise."
+        "Você é um assistente para tarefas de perguntas e respostas. "
+        "Use as seguintes peças de contexto recuperado para responder à pergunta. "
+        "Se você não souber a resposta, apenas diga que não sabe. "
+        "Use no máximo três frases e mantenha a resposta concisa. "
+        'RESPONDA APENAS BASEADO NO CONTEXTO, caso não exista a resposta no contexto responda: "Infelizmente não sei a resposta para essa pergunta" '
         "\n\n"
+        "CONTEXTO:\n"
         "{context}"
     )
     prompt = ChatPromptTemplate.from_messages(
