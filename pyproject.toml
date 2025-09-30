@@ -1,0 +1,20 @@
+[project]
+name = "agent-swarm"
+version = "0.1.0"
+description = "Code challenge for cloud walk"
+authors = [
+    {name = "Caio Vasconcelos Silva Andrade",email = "caiovsa2@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13,<4.0"
+dependencies = [
+    "langchain (>=0.3.27,<0.4.0)",
+    "langchain-openai (>=0.3.33,<0.4.0)",
+    "langgraph (>=0.6.8,<0.7.0)",
+    "fastapi (>=0.118.0,<0.119.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
