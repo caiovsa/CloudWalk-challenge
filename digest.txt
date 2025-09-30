@@ -1,0 +1,370 @@
+Directory structure:
+└── CloudWalk/
+    ├── README.md
+    ├── build_vectorstore.py
+    ├── graph.py
+    ├── main.py
+    ├── pyproject.toml
+    └── tools.py
+
+================================================
+FILE: README.md
+================================================
+[Empty file]
+
+
+================================================
+FILE: build_vectorstore.py
+================================================
+# build_vectorstore.py
+import bs4
+from langchain_community.document_loaders import WebBaseLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_openai import OpenAIEmbeddings
+from langchain_milvus import Milvus
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# 1. Load the documents
+urls = [
+    "https://www.infinitepay.io",
+    "https://www.infinitepay.io/maquininha",
+    "https://www.infinitepay.io/maquininha-celular",
+    "https://www.infinitepay.io/tap-to-pay",
+    "https://www.infinitepay.io/pdv",
+    "https://www.infinitepay.io/receba-na-hora",
+    "https://www.infinitepay.io/gestao-de-cobranca-2",
+    "https://www.infinitepay.io/gestao-de-cobranca",
+    "https://www.infinitepay.io/link-de-pagamento",
+    "https://www.infinitepay.io/loja-online",
+    "https://www.infinitepay.io/boleto",
+    "https://www.infinitepay.io/conta-digital",
+    "https://www.infinitepay.io/conta-pj",
+    "https://www.infinitepay.io/pix",
+    "https://www.infinitepay.io/pix-parcelado",
+    "https://www.infinitepay.io/emprestimo",
+    "https://www.infinitepay.io/cartao",
+    "https://www.infinitepay.io/rendimento"
+]
+
+loader = WebBaseLoader(
+    web_paths=urls,
+    bs_kwargs=dict(
+        parse_only=bs4.SoupStrainer(
+            class_=("main-content", "article-body", "post-content")
+        )
+    ),
+    requests_kwargs={"headers": {"User-Agent": "cloudwalk-rag-builder/1.0"}},
+)
+docs = loader.load()
+
+# 2. Split the documents into smaller chunks
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=8000, chunk_overlap=200)
+splits = text_splitter.split_documents(docs)
+
+# 3. Create embeddings and store in Milvus
+vectorstore = Milvus.from_documents(
+    documents=splits,
+    embedding=OpenAIEmbeddings(),
+    connection_args={
+        "host": "localhost", # or "milvus" if running from another docker container
+        "port": 19530,
+    },
+    collection_name="infinite_pay_docs", # Give your collection a name
+    drop_old=True, # Optional: drops the collection if it already exists
+)
+
+print("Vectorstore created in Milvus successfully!")
+
+
+================================================
+FILE: graph.py
+================================================
+# graph.py
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, ToolMessage
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langgraph.graph import StateGraph, END
+from langgraph.prebuilt.tool_executor import ToolExecutor
+from typing import List, Annotated, TypedDict
+import operator
+from tools import infinite_pay_rag_tool, web_search_tool, get_user_account_status, check_transfer_ability
+
+# Define the state for our graph
+class AgentState(TypedDict):
+    messages: Annotated[List[BaseMessage], operator.add]
+    user_id: str
+
+tools = [infinite_pay_rag_tool, web_search_tool, get_user_account_status, check_transfer_ability]
+tool_executor = ToolExecutor(tools)
+
+# Helper function to create an agent node
+def create_agent_node(llm, tools, system_message_prompt):
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_message_prompt),
+        MessagesPlaceholder(variable_name="messages"),
+    ])
+    agent = prompt | llm.bind_tools(tools)
+    return agent
+
+# --- Define the Agents ---
+
+# 1. Router Agent Logic
+def router_logic(state: AgentState):
+    last_message = state["messages"][-1]
+    
+    # If the last message is a tool call, we always go to the tool node
+    if last_message.tool_calls:
+        return "tools"
+        
+    # Otherwise, we use our keyword logic to route to the correct agent
+    if any(keyword in state['messages'][0].content.lower() for keyword in ["sign in", "transfer", "my account", "can't"]):
+        return "support"
+    else:
+        # Default to the knowledge agent for product questions and general search
+        return "knowledge"
+
+llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
+knowledge_llm = llm.bind_tools([infinite_pay_rag_tool, web_search_tool])
+support_llm = llm.bind_tools([get_user_account_status, check_transfer_ability])
+
+
+# Knowledge Agent
+knowledge_agent_node = create_agent_node(
+    llm,
+    [infinite_pay_rag_tool], # Note: RAG tool is a chain, not a standard tool. We'll call it differently.
+    "You are a helpful assistant for InfinitePay. Your role is to answer questions about products, services, and fees using the provided information."
+)
+
+def agent_node(state: AgentState, agent_llm):
+    result = agent_llm.invoke(state["messages"])
+    return {"messages": [result]}
+
+
+def knowledge_agent_f(state: AgentState):
+    return agent_node(state, knowledge_llm)
+
+# Web Search Agent
+web_search_agent_node = create_agent_node(
+    llm,
+    [web_search_tool],
+    "You are a helpful web assistant. Use the search tool to answer general purpose questions."
+)
+def web_search_agent_f(state: AgentState):
+    # This function would call the agent and tools. For brevity, we'll simplify.
+    # In a real LangGraph implementation, you'd have a tool executor node.
+    result = web_search_agent_node.invoke(state)
+    return {"messages": [result]}
+
+# Customer Support Agent
+support_agent_node = create_agent_node(
+    llm,
+    [get_user_account_status, check_transfer_ability],
+    "You are a customer support agent. Use the available tools to help users with their account-specific issues. Be empathetic and clear."
+)
+def support_agent_f(state: AgentState):
+    return agent_node(state, support_llm)
+
+def tool_node(state: AgentState):
+    last_message = state["messages"][-1]
+    tool_calls = last_message.tool_calls
+    
+    # The user_id from the state is now passed into the tool_executor config
+    # This allows tools like get_user_account_status to receive it automatically.
+    config = {"configurable": {"user_id": state["user_id"]}}
+    
+    responses = tool_executor.batch([
+        (call["name"], call["args"], config) for call in tool_calls
+    ])
+    
+    tool_messages = [
+        ToolMessage(content=str(res), tool_call_id=call["id"])
+        for res, call in zip(responses, tool_calls)
+    ]
+    return {"messages": tool_messages}
+
+# --- Build the Graph ---
+workflow = StateGraph(AgentState)
+
+# Add nodes
+workflow.add_node("knowledge_agent", knowledge_agent_f)
+workflow.add_node("support_agent", support_agent_f)
+workflow.add_node("tool_executor", tool_node)
+
+# Add edges
+workflow.set_entry_point("knowledge_agent") # Start with the knowledge agent by default
+
+# This is the main routing logic
+workflow.add_conditional_edges(
+    "knowledge_agent",
+    router_logic,
+    {"tools": "tool_executor", "support": "support_agent", "__end__": END}
+)
+workflow.add_conditional_edges(
+    "support_agent",
+    router_logic,
+    {"tools": "tool_executor", "__end__": END}
+)
+
+# After running tools, the output is sent back to the agent that called them
+workflow.add_edge("tool_executor", "knowledge_agent")
+# Note: A more complex graph could route back to the correct agent, but this works for now.
+
+# Compile the graph
+app = workflow.compile()
+
+
+================================================
+FILE: main.py
+================================================
+# main.py
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import List
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage
+# You would import your compiled 'app' from graph.py
+from graph import app # Assuming you saved your graph as 'app'
+
+api = FastAPI()
+
+class ChatRequest(BaseModel):
+    message: str
+    user_id: str
+
+@api.post("/chat")
+async def chat_endpoint(request: ChatRequest):
+    inputs = {"messages": [HumanMessage(content=request.message)], "user_id": request.user_id}
+    
+    final_response_message = ""
+    # Stream the output and get the last message
+    for chunk in app.stream(inputs):
+        for message in chunk.get("messages", []):
+            final_response_message = message.content
+    
+    return {"response": final_response_message}
+
+# To run: uvicorn main:api --reload
+
+
+================================================
+FILE: pyproject.toml
+================================================
+[project]
+name = "agent-swarm"
+version = "0.1.0"
+description = "Code challenge for cloud walk"
+authors = [
+    {name = "Caio Vasconcelos Silva Andrade",email = "caiovsa2@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13,<4.0"
+dependencies = [
+    "langchain (>=0.3.27,<0.4.0)",
+    "langchain-openai (>=0.3.33,<0.4.0)",
+    "langgraph (>=0.6.8,<0.7.0)",
+    "fastapi (>=0.118.0,<0.119.0)",
+    "beautifulsoup4 (>=4.14.2,<5.0.0)",
+    "langchain-community (>=0.3.30,<0.4.0)",
+    "pymilvus (>=2.6.2,<3.0.0)",
+    "langchain-milvus (>=0.2.1,<0.3.0)",
+    "uvicorn[standard] (>=0.37.0,<0.38.0)",
+    "langchain-tavily (>=0.2.11,<0.3.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+
+
+================================================
+FILE: tools.py
+================================================
+
+from langchain.tools import tool
+# DEPRECATION FIX: Import the new Tavily Search
+from langchain_tavily import TavilySearch
+from langchain_milvus import Milvus
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+
+# --- Fix the Deprecation Warning ---
+# This line addresses the first warning in your traceback.
+web_search_tool = TavilySearch(k=3)
+
+# --- Define and create the RAG Chain (this part is mostly the same) ---
+def create_rag_chain():
+    vectorstore = Milvus(
+        embedding_function=OpenAIEmbeddings(),
+        connection_args={"host": "milvus", "port": 19530}, # Use 'milvus' hostname from docker-compose
+        collection_name="infinite_pay_docs"
+    )
+    retriever = vectorstore.as_retriever()
+    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+    system_prompt = (
+        "You are an assistant for question-answering tasks. "
+        "Use the following pieces of retrieved context to answer the question. "
+        "If you don't know the answer, just say that you don't know. "
+        "Use three sentences maximum and keep the answer concise."
+        "\n\n"
+        "{context}"
+    )
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system_prompt),
+            ("human", "{input}"),
+        ]
+    )
+    question_answer_chain = create_stuff_documents_chain(llm, prompt)
+    rag_chain = create_retrieval_chain(retriever, question_answer_chain)
+    return rag_chain
+
+# --- THE MAIN FIX IS HERE ---
+# 1. Create the chain once.
+rag_chain = create_rag_chain()
+
+# 2. Create a simple function decorated with @tool that CALLS the chain.
+@tool
+def infinite_pay_rag_tool(query: str) -> str:
+    """
+    Use this tool to answer questions about InfinitePay's products, services, fees,
+    and any other information found on the infinitepay.io website.
+    """
+    print("--- Calling InfinitePay RAG Tool ---")
+    response = rag_chain.invoke({"input": query})
+    return response["answer"]
+
+
+# --- Tools for Customer Support Agent ---
+# These are mock tools. In a real scenario, they would query a database.
+
+@tool
+def get_user_account_status(user_id: str) -> dict:
+    """Gets the account status for a given user ID. Returns mock data."""
+    print(f"--- Checking account status for user: {user_id} ---")
+    if "789" in user_id:
+        return {"status": "active", "account_level": "gold", "has_pending_transfers": False}
+    else:
+        return {"status": "inactive", "reason": "Account not found"}
+
+@tool
+def check_transfer_ability(user_id: str) -> dict:
+    """Checks if a user is able to make transfers and provides a reason if not. Returns mock data."""
+    print(f"--- Checking transfer ability for user: {user_id} ---")
+    if "789" in user_id:
+        # Simulate a temporary block
+        return {"can_transfer": False, "reason": "A security check is pending. Please check your email for verification steps."}
+    else:
+        return {"can_transfer": False, "reason": "Account not found."}
+
