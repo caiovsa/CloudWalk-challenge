@@ -1,5 +1,4 @@
 from langchain.tools import tool
-# DEPRECATION FIX: Import the new Tavily Search
 from langchain_tavily import TavilySearch
 from langchain_milvus import Milvus
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
@@ -10,18 +9,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
-
-# --- Fix the Deprecation Warning ---
-# This line addresses the first warning in your traceback.
+# --- Web Search Tool ---
 web_search_tool = TavilySearch(k=3)
 
-# --- Define and create the RAG Chain (this part is mostly the same) ---
+# --- RAG Chain ---
 def create_rag_chain():
     vectorstore = Milvus(
         embedding_function=OpenAIEmbeddings(),
-        #connection_args={"host": "milvus", "port": 19530}, # Local Milvus
-        connection_args={"uri": "http://standalone:19530"}, # Docker louco
+        connection_args={"uri": "http://standalone:19530"},
         collection_name="infinite_pay_docs"
     )
     retriever = vectorstore.as_retriever()
@@ -46,40 +41,69 @@ def create_rag_chain():
     rag_chain = create_retrieval_chain(retriever, question_answer_chain)
     return rag_chain
 
-# --- THE MAIN FIX IS HERE ---
-# 1. Create the chain once.
 rag_chain = create_rag_chain()
 
-# 2. Create a simple function decorated with @tool that CALLS the chain.
 @tool
 def infinite_pay_rag_tool(query: str) -> str:
-    """
-    Use this tool to answer questions about InfinitePay's products, services, fees,
-    and any other information found on the infinitepay.io website.
-    """
+    """Use para perguntas sobre produtos InfinitePay"""
     print("--- Calling InfinitePay RAG Tool ---")
     response = rag_chain.invoke({"input": query})
-    print(f"RAG Response: {response}")
     return response["answer"]
 
-# --- Tools for Customer Support Agent ---
-# These are mock tools. In a real scenario, they would query a database.
+# --- IMPROVED SUPPORT TOOLS ---
 
 @tool
-def get_user_account_status(user_id: str) -> dict:
-    """Gets the account status for a given user ID. Returns mock data."""
+def get_user_account_status(user_id: str) -> str:
+    """Verifica status da conta do usuário. Use quando usuário perguntar sobre status da conta, login ou problemas de acesso."""
     print(f"--- Checking account status for user: {user_id} ---")
-    if "789" in user_id:
-        return {"status": "active", "account_level": "gold", "has_pending_transfers": False}
+    
+    # Mock data mais realista
+    user_status_map = {
+        "cliente123": {"status": "active", "level": "premium", "since": "2024-01-15"},
+        "cliente456": {"status": "active", "level": "basic", "since": "2024-03-20"},
+        "cliente789": {"status": "blocked", "level": "gold", "since": "2023-11-05", "reason": "Verificação pendente"},
+        "usuario999": {"status": "inactive", "reason": "Conta suspensa por violação de termos"}
+    }
+    
+    user_data = user_status_map.get(user_id, {"status": "not_found", "reason": "Usuário não encontrado"})
+    
+    if user_data["status"] == "active":
+        return f"Conta ATIVA - Nível: {user_data['level']} - Cliente desde: {user_data['since']}"
+    elif user_data["status"] == "blocked":
+        return f"Conta BLOQUEADA - Motivo: {user_data['reason']} - Nível anterior: {user_data['level']}"
+    elif user_data["status"] == "inactive":
+        return f"Conta INATIVA - Motivo: {user_data['reason']}"
     else:
-        return {"status": "inactive", "reason": "Account not found"}
+        return "Conta não encontrada no sistema"
 
 @tool
-def check_transfer_ability(user_id: str) -> dict:
-    """Checks if a user is able to make transfers and provides a reason if not. Returns mock data."""
+def check_transfer_ability(user_id: str) -> str:
+    """Verifica se usuário pode fazer transferências. Use quando perguntarem sobre transferências, pagamentos ou limites."""
     print(f"--- Checking transfer ability for user: {user_id} ---")
-    if "789" in user_id:
-        # Simulate a temporary block
-        return {"can_transfer": False, "reason": "A security check is pending. Please check your email for verification steps."}
+    
+    # Mock data melhorado
+    transfer_status_map = {
+        "cliente123": {"can_transfer": True, "daily_limit": 5000.00, "available_today": 3500.00},
+        "cliente456": {"can_transfer": True, "daily_limit": 2000.00, "available_today": 1500.00},
+        "cliente789": {"can_transfer": False, "reason": "Verificação de segurança pendente"},
+        "usuario999": {"can_transfer": False, "reason": "Conta suspensa"}
+    }
+    
+    status = transfer_status_map.get(user_id, {"can_transfer": False, "reason": "Usuário não encontrado"})
+    
+    if status["can_transfer"]:
+        return f"Transferências LIBERADAS - Limite diário: R$ {status['daily_limit']:.2f} - Disponível hoje: R$ {status['available_today']:.2f}"
     else:
-        return {"can_transfer": False, "reason": "Account not found."}
+        return f"Transferências BLOQUEADAS - Motivo: {status['reason']}"
+
+@tool
+def reset_user_password(user_id: str) -> str:
+    """Solicita reset de senha para o usuário. Use quando usuário esquecer a senha."""
+    print(f"--- Password reset for user: {user_id} ---")
+    return f"Email de recuperação enviado para {user_id}@email.com. O link expira em 1 hora."
+
+@tool
+def contact_support_agent(user_id: str) -> str:
+    """Conecta usuário com agente humano. Use para problemas complexos não resolvidos pelas ferramentas automáticas."""
+    print(f"--- Connecting user {user_id} to human agent ---")
+    return f"Agente humano solicitado para {user_id}. Tempo de espera estimado: 3 minutos. Caso ID: SUP-{user_id}-2024"

@@ -45,4 +45,43 @@ Create a `.env` file in the root directory and add your API keys.
     <img src="screenshots/image3.png" alt="Milvus UI" width="600"/>
     
     ![Milvus UI](screenshots/image.png)
-    
+
+-----
+### Examples:
+
+```curl
+curl -X POST http://localhost:8005/chat \
+-H "Content-Type: application/json" \
+-d '{
+    "message": "What are the fees of the Maquininha Smart",
+    "user_id": "cliente789"
+}'
+
+curl -X POST http://localhost:8005/chat \
+-H "Content-Type: application/json" \
+-d '{
+    "message": "What is the cost of the Maquininha Smart?",
+    "user_id": "cliente789"
+}'
+
+curl -X POST http://localhost:8005/chat \
+-H "Content-Type: application/json" \
+-d '{
+    "message": "What are the rates for debit and credit card transactions?",
+    "user_id": "cliente789"
+}'
+
+curl -X POST http://localhost:8005/chat \
+-H "Content-Type: application/json" \
+-d '{
+    "message": "How can I use my phone as a card machine?",
+    "user_id": "cliente789"
+}'
+
+curl -X POST http://localhost:8005/chat \
+-H "Content-Type: application/json" \
+-d '{
+    "message": "Minha conta está bloqueada, o que fazer?",
+    "user_id": "cliente789"
+}'
+```
