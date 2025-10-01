@@ -5,6 +5,10 @@ The project implements a multi-agent system using LangChain's LangGraph framewor
 
 ## ENV VARIABLES
 There is this small detail that we need some API_KEYS for this project to work:
+
+* OPENAI_API_KEY ---> Key OPENAI
+* TAVILY_API_KEY ---> Key to Tavily
+
 Create a `.env` file in the root directory and add your API keys.
 ```env
     // filepath: .env

@@ -1,11 +1,8 @@
-# main.py (Corrected)
-
 from fastapi import FastAPI
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage, AIMessage
 
-# You would import your compiled 'app' from graph.py
-from graph import app # Assuming you saved your graph as 'app'
+from graph import app
 
 api = FastAPI()
 
@@ -13,21 +10,27 @@ class ChatRequest(BaseModel):
     message: str
     user_id: str
 
+# Endpoint principal para chat, bem básico do jeito que o FastAPI funciona
+# Recebe a mensagem e o user_id (para contexto de usuário)
+# Retorna a resposta final do grafo
 @api.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     inputs = {"messages": [HumanMessage(content=request.message)], "user_id": request.user_id}
     
     final_answer = ""
-    # Stream the output and get the last AI message
+    # Streaming a resposta do grafo
+    # O grafo retorna chunks com o estado atual
+    # No final pegamos a resposta final do AIMessage que não tem tool_calls
     for chunk in app.stream(inputs):
-        print(f"--- Graph Chunk: {chunk} ---")
+        print(f"--- Graph: {chunk} ---")
         
-        # The chunk is a dictionary with the node name as the key
+        # O chunk é um dict com o estado atual do grafo
+        # Precisamos iterar para achar a resposta final
         for node_name, node_output in chunk.items():
-            # Get the list of messages from the node's output
+            # Lista de mensagens no estado atual
             messages = node_output.get("messages", [])
             for message in messages:
-                # The final answer is in an AIMessage that has content and NO tool_calls
+                # A resposta final está em um AIMessage que tem conteúdo e NÃO tem tool_calls
                 if isinstance(message, AIMessage) and message.content and not message.tool_calls:
                     final_answer = message.content
     

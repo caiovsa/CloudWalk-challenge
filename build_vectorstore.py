@@ -9,7 +9,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# 1. Load the documents
+# Esse codigo aqui so é para construir o vectorstore no Milvus
+# Ele serve apenas para sair pegando oque for possivel dos sites da InfinitePay
+# e jogar no Milvus para ser usado depois no RAG
+
+# "DOCUMENTOS"
 urls = [
     "https://www.infinitepay.io",
     "https://www.infinitepay.io/maquininha",
@@ -31,7 +35,7 @@ urls = [
     "https://www.infinitepay.io/rendimento"
 ]
 
-# The FIX is here: We removed the `bs_kwargs` argument entirely.
+# WebLoader para pegar o conteudo dos sites
 loader = WebBaseLoader(
     web_paths=urls,
     requests_kwargs={"headers": {"User-Agent": "cloudwalk-rag-builder/1.0"}},
@@ -39,18 +43,22 @@ loader = WebBaseLoader(
 docs = loader.load()
 
 # --- ADDED FOR VERIFICATION ---
-print(f"✅ Successfully loaded {len(docs)} documents from the websites.")
+print(f"Conseguimos carregar tudo! {len(docs)} documentos dos sites.")
 if docs:
-    print("--- Snippet from the first document: ---")
+    print("--- Snippet do primeiro documento: ---")
     print(docs[0].page_content[:500])
     print("------------------------------------")
+    print("Caso queira verificar o DB, acesse localhost:7071 no seu navegador! e o Milvus Address é milvus-standalone2:19530")
 # -----------------------------
 
-# 2. Split the documents into smaller chunks
+# Parte de Chunk, sem muita beleza ou rigor tecnico, so para quebrar o texto em pedaços menores
+# e facilitar a busca depois. Como é apenas para uma demostração, não precisa ser perfeito.
+# Se fosse um projeto serio, teria que pensar melhor nisso.
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150) # Adjusted chunk size for better performance
 splits = text_splitter.split_documents(docs)
 
-# 3. Create embeddings and store in Milvus
+# Milvus Vectorstore, apenas conectando e jogando os dados la dentro
+# O nome da collection/coleção é "infinite_pay_docs"
 vectorstore = Milvus.from_documents(
     documents=splits,
     embedding=OpenAIEmbeddings(),
@@ -60,4 +68,4 @@ vectorstore = Milvus.from_documents(
     drop_old=True,
 )
 
-print("✅ Vectorstore created in Milvus successfully!")
+print("Vectorstore CRIADO no Milvus!! Operação concluída com sucesso!")

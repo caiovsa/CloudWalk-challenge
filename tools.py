@@ -9,10 +9,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- Web Search Tool ---
+# Ferramenta de web search genérica
+# Usei o TavilySearch que é free e simples
+# Pode ser trocado por qualquer outra ferramenta de web search
+# OBS: Prefiro muito mais o perplexity...mas ai ele ja é pago
 web_search_tool = TavilySearch(k=3)
 
-# --- RAG Chain ---
+# RAG Chain (Etapa basica de RAG)
 def create_rag_chain():
     vectorstore = Milvus(
         embedding_function=OpenAIEmbeddings(),
@@ -43,6 +46,7 @@ def create_rag_chain():
 
 rag_chain = create_rag_chain()
 
+# Primeira ferramenta, para perguntas sobre produtos InfinitePay
 @tool
 def infinite_pay_rag_tool(query: str) -> str:
     """Use para perguntas sobre produtos InfinitePay"""
@@ -50,8 +54,12 @@ def infinite_pay_rag_tool(query: str) -> str:
     response = rag_chain.invoke({"input": query})
     return response["answer"]
 
-# --- IMPROVED SUPPORT TOOLS ---
 
+# Aqui começam as ferramentas específicas para o agente de suporte
+# Essas ferramentas são mais focadas em ações que o agente pode fazer
+# como verificar status de conta, resetar senha, etc.
+# Tudo mockado, mas dá para ter uma ideia legal...
+# Ser sincero isso aqui tinha como ser bem melhor, mas é só para demo mesmo acho que serve
 @tool
 def get_user_account_status(user_id: str) -> str:
     """Verifica status da conta do usuário. Use quando usuário perguntar sobre status da conta, login ou problemas de acesso."""
