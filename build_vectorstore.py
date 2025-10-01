@@ -54,10 +54,8 @@ splits = text_splitter.split_documents(docs)
 vectorstore = Milvus.from_documents(
     documents=splits,
     embedding=OpenAIEmbeddings(),
-    connection_args={
-        "host": "localhost",
-        "port": 19530,
-    },
+    #connection_args={"host": "localhost","port": 19530}, #LOCAL MILVUS
+    connection_args={"uri": "http://standalone:19530"}, # DOCKER LOUCO
     collection_name="infinite_pay_docs",
     drop_old=True,
 )

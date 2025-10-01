@@ -20,7 +20,8 @@ web_search_tool = TavilySearch(k=3)
 def create_rag_chain():
     vectorstore = Milvus(
         embedding_function=OpenAIEmbeddings(),
-        connection_args={"host": "milvus", "port": 19530}, # Use 'milvus' hostname from docker-compose
+        #connection_args={"host": "milvus", "port": 19530}, # Local Milvus
+        connection_args={"uri": "http://standalone:19530"}, # Docker louco
         collection_name="infinite_pay_docs"
     )
     retriever = vectorstore.as_retriever()
@@ -31,7 +32,6 @@ def create_rag_chain():
         "Use as seguintes peças de contexto recuperado para responder à pergunta. "
         "Se você não souber a resposta, apenas diga que não sabe. "
         "Use no máximo três frases e mantenha a resposta concisa. "
-        'RESPONDA APENAS BASEADO NO CONTEXTO, caso não exista a resposta no contexto responda: "Infelizmente não sei a resposta para essa pergunta" '
         "\n\n"
         "CONTEXTO:\n"
         "{context}"

@@ -1,3 +1,5 @@
 .env
 add_to_vectorstore.py
 TODO.md
+/volumes
+**/__pycache__/
